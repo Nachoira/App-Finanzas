@@ -4,6 +4,20 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import GastoChart from './components/GastoChart';
 
+// Paleta de colores distintos por categoría
+const CATEGORY_COLORS = [
+  '#c8f135', // verde lima
+  '#38bdf8', // celeste
+  '#f97316', // naranja
+  '#a78bfa', // violeta
+  '#f43f5e', // rosa
+  '#34d399', // verde menta
+  '#fbbf24', // amarillo
+  '#e879f9', // fucsia
+  '#60a5fa', // azul
+  '#fb7185', // salmon
+];
+
 export default async function Home() {
   const cookieStore = await cookies();
   const userId = cookieStore.get('session')?.value;
@@ -43,6 +57,30 @@ export default async function Home() {
     revalidatePath('/');
   }
 
+  async function actualizarLimite(formData) {
+    'use server';
+    const catId = formData.get('catId');
+    const nuevo = formData.get('nuevoLimite');
+    const cStore = await cookies();
+    const uId = cStore.get('session').value;
+    await pool.query(
+      'UPDATE "Categoria" SET "presupuestoMax" = $1 WHERE id = $2 AND "usuarioId" = $3',
+      [parseFloat(nuevo), catId, uId]
+    );
+    revalidatePath('/');
+  }
+
+  async function eliminarCategoria(formData) {
+    'use server';
+    const catId = formData.get('catId');
+    const cStore = await cookies();
+    const uId = cStore.get('session').value;
+    // Primero elimina los gastos asociados
+    await pool.query('DELETE FROM "Gasto" WHERE "categoriaId" = $1 AND "usuarioId" = $2', [catId, uId]);
+    await pool.query('DELETE FROM "Categoria" WHERE id = $1 AND "usuarioId" = $2', [catId, uId]);
+    revalidatePath('/');
+  }
+
   // DATA
   const resCat = await pool.query(`
     SELECT c.id, c.nombre, c."presupuestoMax",
@@ -53,11 +91,12 @@ export default async function Home() {
     GROUP BY c.id ORDER BY c.nombre ASC
   `, [userId]);
 
-  const categorias = resCat.rows.map(cat => ({
+  const categorias = resCat.rows.map((cat, i) => ({
     ...cat,
-    gastoTotal:    parseFloat(cat.gastoTotal),
+    gastoTotal:     parseFloat(cat.gastoTotal),
     presupuestoMax: parseFloat(cat.presupuestoMax),
-    superoLimite:  parseFloat(cat.gastoTotal) > parseFloat(cat.presupuestoMax),
+    superoLimite:   parseFloat(cat.gastoTotal) > parseFloat(cat.presupuestoMax),
+    color:          CATEGORY_COLORS[i % CATEGORY_COLORS.length],
   }));
 
   const resGastos = await pool.query(`
@@ -67,15 +106,15 @@ export default async function Home() {
   `, [userId]);
   const gastos = resGastos.rows;
 
-  const totalGastado = categorias.reduce((s, c) => s + c.gastoTotal, 0);
+  const totalGastado    = categorias.reduce((s, c) => s + c.gastoTotal, 0);
   const totalPresupuesto = categorias.reduce((s, c) => s + c.presupuestoMax, 0);
-  const superadas = categorias.filter(c => c.superoLimite).length;
+  const superadas       = categorias.filter(c => c.superoLimite).length;
 
   const chartData = {
     labels: categorias.map(c => c.nombre),
     datasets: [{
-      data: categorias.map(c => c.gastoTotal),
-      backgroundColor: ['#c8f135','#a3d419','#7fb80f','#5a8c05','#3d6600'],
+      data:            categorias.map(c => c.gastoTotal),
+      backgroundColor: categorias.map(c => c.color),
       borderWidth: 0,
     }]
   };
@@ -110,7 +149,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* CONTENIDO PRINCIPAL */}
       <div className="content-grid">
 
         {/* PRESUPUESTOS */}
@@ -124,22 +162,61 @@ export default async function Home() {
               const pct = Math.min((cat.gastoTotal / cat.presupuestoMax) * 100, 100);
               return (
                 <div key={cat.id} className={`cat-row ${cat.superoLimite ? 'cat-row--danger' : ''}`}>
+
+                  {/* Nombre + montos */}
                   <div className="cat-top">
-                    <span className="cat-nombre">{cat.nombre}</span>
+                    <div className="cat-nombre-wrap">
+                      <span className="cat-dot" style={{ background: cat.color }} />
+                      <span className="cat-nombre">{cat.nombre}</span>
+                    </div>
                     <span className={`cat-monto ${cat.superoLimite ? 'cat-monto--danger' : ''}`}>
                       ${cat.gastoTotal.toLocaleString('es-AR')}
                       <span className="cat-limit"> / ${cat.presupuestoMax.toLocaleString('es-AR')}</span>
                     </span>
                   </div>
+
+                  {/* Barra de progreso con color de categoría */}
                   <div className="progress-track">
                     <div
-                      className={`progress-fill ${cat.superoLimite ? 'progress-fill--danger' : ''}`}
-                      style={{ width: `${pct}%` }}
+                      className="progress-fill"
+                      style={{
+                        width: `${pct}%`,
+                        background: cat.superoLimite ? 'var(--danger)' : cat.color,
+                      }}
                     />
                   </div>
-                  {cat.superoLimite && (
-                    <span className="cat-alert">⚠ Límite superado</span>
-                  )}
+
+                  {cat.superoLimite && <span className="cat-alert">⚠ Límite superado</span>}
+
+                  {/* Acciones: actualizar límite + eliminar */}
+                  <div className="cat-actions">
+                    <form action={actualizarLimite} className="cat-update-form">
+                      <input type="hidden" name="catId" value={cat.id} />
+                      <input
+                        name="nuevoLimite"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        placeholder={`Nuevo límite (actual: $${cat.presupuestoMax.toLocaleString('es-AR')})`}
+                        required
+                        className="field-input field-input--sm"
+                      />
+                      <button type="submit" className="btn-update">Actualizar</button>
+                    </form>
+                    <form action={eliminarCategoria}>
+                      <input type="hidden" name="catId" value={cat.id} />
+                      <button
+                        type="submit"
+                        className="btn-delete"
+                        onClick={(e) => {
+                          if (!confirm(`¿Eliminar "${cat.nombre}" y todos sus gastos?`)) e.preventDefault();
+                        }}
+                      >
+                        Eliminar
+                      </button>
+                    </form>
+                  </div>
+
                 </div>
               );
             })}
@@ -202,15 +279,20 @@ export default async function Home() {
           <section className="card card--full">
             <h2 className="card-title">Últimos movimientos</h2>
             <div className="gastos-list">
-              {gastos.map(g => (
-                <div key={g.id} className="gasto-row">
-                  <div className="gasto-info">
-                    <span className="gasto-desc">{g.descripcion}</span>
-                    <span className="gasto-cat">{g.cat_nombre}</span>
+              {gastos.map((g, i) => {
+                const cat = categorias.find(c => c.nombre === g.cat_nombre);
+                return (
+                  <div key={g.id} className="gasto-row">
+                    <div className="gasto-info">
+                      <span className="gasto-desc">{g.descripcion}</span>
+                      <span className="gasto-cat" style={{ color: cat?.color || 'var(--muted)' }}>
+                        {g.cat_nombre}
+                      </span>
+                    </div>
+                    <span className="gasto-monto">-${parseFloat(g.monto).toLocaleString('es-AR')}</span>
                   </div>
-                  <span className="gasto-monto">-${parseFloat(g.monto).toLocaleString('es-AR')}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -228,18 +310,14 @@ export default async function Home() {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 20px 20px;
+          padding: 20px;
           border-bottom: 1px solid var(--border);
           position: sticky;
           top: 0;
           background: var(--bg);
           z-index: 10;
         }
-        .header-brand {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
+        .header-brand { display: flex; align-items: center; gap: 8px; }
         .header-logo { font-size: 1.2rem; color: var(--accent); }
         .header-title {
           font-family: var(--font-display);
@@ -330,7 +408,6 @@ export default async function Home() {
           display: flex;
           flex-direction: column;
           gap: 8px;
-          transition: border-color 0.2s;
         }
         .cat-row--danger {
           background: var(--danger-bg);
@@ -342,10 +419,17 @@ export default async function Home() {
           align-items: center;
           gap: 8px;
         }
+        .cat-nombre-wrap { display: flex; align-items: center; gap: 8px; }
+        .cat-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
         .cat-nombre { font-weight: 600; font-size: 0.95rem; }
-        .cat-monto { font-family: var(--font-display); font-weight: 800; font-size: 0.95rem; }
+        .cat-monto { font-family: var(--font-display); font-weight: 800; font-size: 0.95rem; white-space: nowrap; }
         .cat-monto--danger { color: var(--danger); }
-        .cat-limit { font-weight: 400; color: var(--muted); font-family: var(--font-body); font-size: 0.85rem; }
+        .cat-limit { font-weight: 400; color: var(--muted); font-family: var(--font-body); font-size: 0.82rem; }
         .progress-track {
           height: 4px;
           background: var(--border);
@@ -354,12 +438,57 @@ export default async function Home() {
         }
         .progress-fill {
           height: 100%;
-          background: var(--accent);
           border-radius: 99px;
           transition: width 0.4s ease;
         }
-        .progress-fill--danger { background: var(--danger); }
         .cat-alert { font-size: 0.75rem; color: var(--danger); }
+
+        /* ACCIONES DE CATEGORIA */
+        .cat-actions {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-top: 4px;
+          padding-top: 10px;
+          border-top: 1px solid var(--border);
+        }
+        .cat-update-form {
+          display: flex;
+          gap: 8px;
+        }
+        .field-input--sm {
+          padding: 8px 10px;
+          font-size: 0.82rem;
+          flex: 1;
+          min-width: 0;
+        }
+        .btn-update {
+          padding: 8px 12px;
+          background: var(--surface);
+          color: var(--accent);
+          border: 1px solid var(--accent);
+          border-radius: 6px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          white-space: nowrap;
+          transition: background 0.2s, color 0.2s;
+          flex-shrink: 0;
+        }
+        .btn-update:hover { background: var(--accent); color: #0d0d0d; }
+        .btn-delete {
+          width: 100%;
+          padding: 8px;
+          background: transparent;
+          color: var(--danger);
+          border: 1px solid var(--danger-border);
+          border-radius: 6px;
+          font-size: 0.8rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.2s;
+        }
+        .btn-delete:hover { background: var(--danger-bg); }
 
         /* CHART */
         .chart-wrap { height: 220px; }
@@ -427,7 +556,7 @@ export default async function Home() {
         .gasto-row:last-child { border-bottom: none; }
         .gasto-info { display: flex; flex-direction: column; gap: 2px; }
         .gasto-desc { font-size: 0.9rem; font-weight: 500; }
-        .gasto-cat { font-size: 0.75rem; color: var(--muted); }
+        .gasto-cat { font-size: 0.75rem; }
         .gasto-monto {
           font-family: var(--font-display);
           font-weight: 800;
