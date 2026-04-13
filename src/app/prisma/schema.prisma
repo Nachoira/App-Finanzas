@@ -1,0 +1,27 @@
+// finanzas_app7/prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Categoria {
+  id             String   @id @default(cuid())
+  nombre         String
+  presupuestoMax Float
+  esEsencial     Boolean  @default(false)
+  gastos         Gasto[]
+}
+
+model Gasto {
+  id           String    @id @default(cuid())
+  monto        Float
+  descripcion  String
+  fecha        DateTime  @default(now())
+  categoria    Categoria @relation(fields: [categoriaId], references: [id])
+  categoriaId  String
+}
