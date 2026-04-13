@@ -1,35 +1,40 @@
-'use client'; // CRÍTICO: Indica que esto corre en el navegador
-
+// components/GastoChart.js
+'use client';
 import { Doughnut } from 'react-chartjs-2';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 
-// Registramos los componentes de Chart.js que usaremos
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 export default function GastoChart({ chartData }) {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
+    cutout: '72%',
     plugins: {
       legend: {
         position: 'right',
         labels: {
           usePointStyle: true,
-          font: { size: 12, family: '"Inter", sans-serif' },
-          color: '#1d1d1f'
+          pointStyleWidth: 8,
+          padding: 14,
+          font: { size: 12, family: 'var(--font-body, "DM Sans", sans-serif)' },
+          color: '#888',
         }
       },
       tooltip: {
-        backgroundColor: '#000',
+        backgroundColor: '#1f1f1f',
+        borderColor: '#2a2a2a',
+        borderWidth: 1,
         padding: 12,
-        titleFont: { size: 14 },
-        bodyFont: { size: 14 },
+        titleColor: '#f0f0f0',
+        bodyColor: '#c8f135',
+        titleFont: { size: 13, family: 'var(--font-display, "Syne", sans-serif)', weight: '700' },
+        bodyFont:  { size: 13, family: 'var(--font-body,    "DM Sans", sans-serif)' },
         callbacks: {
           label: (item) => {
             const total = item.dataset.data.reduce((a, b) => a + b, 0);
-            const value = item.raw;
-            const percentage = ((value / total) * 100).toFixed(1);
-            return `$ ${value.toLocaleString('es-AR')} (${percentage}%)`;
+            const pct   = ((item.raw / total) * 100).toFixed(1);
+            return `  $${item.raw.toLocaleString('es-AR')}  (${pct}%)`;
           }
         }
       }
