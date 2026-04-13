@@ -3,19 +3,11 @@ import { cookies } from 'next/headers';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import GastoChart from './components/GastoChart';
+import BtnEliminar from './components/BtnEliminar';
 
-// Paleta de colores distintos por categoría
 const CATEGORY_COLORS = [
-  '#c8f135', // verde lima
-  '#38bdf8', // celeste
-  '#f97316', // naranja
-  '#a78bfa', // violeta
-  '#f43f5e', // rosa
-  '#34d399', // verde menta
-  '#fbbf24', // amarillo
-  '#e879f9', // fucsia
-  '#60a5fa', // azul
-  '#fb7185', // salmon
+  '#c8f135', '#38bdf8', '#f97316', '#a78bfa', '#f43f5e',
+  '#34d399', '#fbbf24', '#e879f9', '#60a5fa', '#fb7185',
 ];
 
 export default async function Home() {
@@ -70,14 +62,18 @@ export default async function Home() {
     revalidatePath('/');
   }
 
-  async function eliminarCategoria(formData) {
+  async function eliminarCategoria(catId) {
     'use server';
-    const catId = formData.get('catId');
     const cStore = await cookies();
     const uId = cStore.get('session').value;
-    // Primero elimina los gastos asociados
-    await pool.query('DELETE FROM "Gasto" WHERE "categoriaId" = $1 AND "usuarioId" = $2', [catId, uId]);
-    await pool.query('DELETE FROM "Categoria" WHERE id = $1 AND "usuarioId" = $2', [catId, uId]);
+    await pool.query(
+      'DELETE FROM "Gasto" WHERE "categoriaId" = $1 AND "usuarioId" = $2',
+      [catId, uId]
+    );
+    await pool.query(
+      'DELETE FROM "Categoria" WHERE id = $1 AND "usuarioId" = $2',
+      [catId, uId]
+    );
     revalidatePath('/');
   }
 
@@ -106,9 +102,9 @@ export default async function Home() {
   `, [userId]);
   const gastos = resGastos.rows;
 
-  const totalGastado    = categorias.reduce((s, c) => s + c.gastoTotal, 0);
+  const totalGastado     = categorias.reduce((s, c) => s + c.gastoTotal, 0);
   const totalPresupuesto = categorias.reduce((s, c) => s + c.presupuestoMax, 0);
-  const superadas       = categorias.filter(c => c.superoLimite).length;
+  const superadas        = categorias.filter(c => c.superoLimite).length;
 
   const chartData = {
     labels: categorias.map(c => c.nombre),
@@ -163,7 +159,6 @@ export default async function Home() {
               return (
                 <div key={cat.id} className={`cat-row ${cat.superoLimite ? 'cat-row--danger' : ''}`}>
 
-                  {/* Nombre + montos */}
                   <div className="cat-top">
                     <div className="cat-nombre-wrap">
                       <span className="cat-dot" style={{ background: cat.color }} />
@@ -175,7 +170,6 @@ export default async function Home() {
                     </span>
                   </div>
 
-                  {/* Barra de progreso con color de categoría */}
                   <div className="progress-track">
                     <div
                       className="progress-fill"
@@ -188,7 +182,6 @@ export default async function Home() {
 
                   {cat.superoLimite && <span className="cat-alert">⚠ Límite superado</span>}
 
-                  {/* Acciones: actualizar límite + eliminar */}
                   <div className="cat-actions">
                     <form action={actualizarLimite} className="cat-update-form">
                       <input type="hidden" name="catId" value={cat.id} />
@@ -203,18 +196,7 @@ export default async function Home() {
                       />
                       <button type="submit" className="btn-update">Actualizar</button>
                     </form>
-                    <form action={eliminarCategoria}>
-                      <input type="hidden" name="catId" value={cat.id} />
-                      <button
-                        type="submit"
-                        className="btn-delete"
-                        onClick={(e) => {
-                          if (!confirm(`¿Eliminar "${cat.nombre}" y todos sus gastos?`)) e.preventDefault();
-                        }}
-                      >
-                        Eliminar
-                      </button>
-                    </form>
+                    <BtnEliminar action={eliminarCategoria.bind(null, cat.id)} nombre={cat.nombre} />
                   </div>
 
                 </div>
@@ -279,7 +261,7 @@ export default async function Home() {
           <section className="card card--full">
             <h2 className="card-title">Últimos movimientos</h2>
             <div className="gastos-list">
-              {gastos.map((g, i) => {
+              {gastos.map(g => {
                 const cat = categorias.find(c => c.nombre === g.cat_nombre);
                 return (
                   <div key={g.id} className="gasto-row">
@@ -304,8 +286,6 @@ export default async function Home() {
           background: var(--bg);
           padding: 0 0 48px;
         }
-
-        /* HEADER */
         .app-header {
           display: flex;
           justify-content: space-between;
@@ -336,8 +316,6 @@ export default async function Home() {
           transition: border-color 0.2s, color 0.2s;
         }
         .btn-logout:hover { border-color: var(--text); color: var(--text); }
-
-        /* SUMMARY */
         .summary-row {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
@@ -366,8 +344,6 @@ export default async function Home() {
           font-weight: 800;
         }
         .summary-card--danger .summary-value { color: var(--danger); }
-
-        /* GRID */
         .content-grid {
           display: grid;
           grid-template-columns: 1fr;
@@ -378,8 +354,6 @@ export default async function Home() {
           .content-grid { grid-template-columns: 1fr 1fr; padding: 0 24px; }
           .card--full { grid-column: 1 / -1; }
         }
-
-        /* CARD */
         .card {
           background: var(--surface);
           border: 1px solid var(--border);
@@ -397,8 +371,6 @@ export default async function Home() {
           padding-bottom: 12px;
           border-bottom: 1px solid var(--border);
         }
-
-        /* CATEGORIAS */
         .cat-list { display: flex; flex-direction: column; gap: 14px; }
         .cat-row {
           padding: 14px;
@@ -442,8 +414,6 @@ export default async function Home() {
           transition: width 0.4s ease;
         }
         .cat-alert { font-size: 0.75rem; color: var(--danger); }
-
-        /* ACCIONES DE CATEGORIA */
         .cat-actions {
           display: flex;
           flex-direction: column;
@@ -489,11 +459,7 @@ export default async function Home() {
           transition: background 0.2s;
         }
         .btn-delete:hover { background: var(--danger-bg); }
-
-        /* CHART */
         .chart-wrap { height: 220px; }
-
-        /* FORMS */
         .form-stack { display: flex; flex-direction: column; gap: 14px; }
         .field-group { display: flex; flex-direction: column; gap: 6px; }
         .field-label {
@@ -515,7 +481,6 @@ export default async function Home() {
         .field-input:focus { border-color: var(--accent); outline: none; }
         .field-select { cursor: pointer; }
         .field-select option { background: var(--surface2); }
-
         .btn-accent {
           padding: 13px;
           background: var(--accent);
@@ -542,8 +507,6 @@ export default async function Home() {
           font-size: 0.9rem;
         }
         .btn-outline:hover { border-color: var(--accent); }
-
-        /* GASTOS */
         .gastos-list { display: flex; flex-direction: column; }
         .gasto-row {
           display: flex;
